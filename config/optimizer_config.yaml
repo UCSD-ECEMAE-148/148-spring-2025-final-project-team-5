@@ -1,0 +1,102 @@
+# Race Trajectory Optimizer Configuration
+# This file allows you to configure all aspects of the minimum-time optimizer
+
+# Track Configuration
+track:
+  file: "berlin_2018.csv"       # CSV file in inputs/tracks/
+  format: "tum"                 # "tum" = centerline with width info
+  track_width: 2.5              # meters (measured ~0.28m car, leaving buffer)
+  safety_margin: 0.25           # meters of buffer from boundaries
+
+# Vehicle Dynamics
+vehicle:
+  ggv_file: ""                  # (Optional) Leave blank if not using full GGV
+  ax_max_machines_file: ""      # (Optional) Longitudinal acceleration machine file
+
+  # Chassis dimensions
+  length: 0.465                 # [m] overall car length (from specs)
+  width: 0.285                  # [m] wheel-to-wheel width
+
+  # Mass properties
+  mass: 2.18                    # [kg] car + battery (from datasheet)
+
+  # Powertrain (optional for curvature-based path)
+  power_max: 0.3                # [kW] ~0.4 HP peak estimated
+
+  # Tire model (simplified assumed)
+  tire_model: "linear"          # "linear" or "nonlinear" (linear is default for RC)
+
+# Optimization Settings
+optimization:
+  mode: "minimum_time"          # "minimum_time" for fastest lap time
+
+  solver:
+    type: "IPOPT"               # NLP solver for optimal control
+    max_iterations: 500
+    tolerance: 1e-6
+
+  num_points: 300               # Discretization points along track
+
+  constraints:
+    max_lateral_acc: 1.5        # [m/s²] lateral grip ~μg ≈ 1.2 × 9.8
+    max_longitudinal_acc: 2.0   # [m/s²] full-throttle acceleration
+    max_longitudinal_dec: -3.0  # [m/s²] braking
+    max_velocity: 9.0           # [m/s] ≈ 32 km/h (2S LiPo max safe speed)
+
+  weights:
+    time: 1.0                   # Minimize time primarily
+    smoothness: 0.2             # Penalize sharp inputs
+    tire_usage: 0.05            # Discourage excessive acceleration
+
+# Friction Map Settings
+friction:
+  use_variable_friction: false
+  friction_map: ""              # Optional .csv if available
+  friction_data: ""             # Optional .json if available
+  default_mu: 1.2               # Rubber tire on rough asphalt
+
+# Output Configuration
+output:
+  directory: "outputs"          # Where results will be saved
+
+  formats:
+    - "csv"
+    - "json"
+    - "pickle"
+
+  visualization:
+    enabled: true
+    show_plots: true
+    save_plots: true
+    plot_format: "png"
+    dpi: 300
+
+  include:
+    - "trajectory"
+    - "velocity_profile"
+    - "acceleration_profile"
+    - "curvature"
+    - "racing_line"
+    - "track_boundaries"
+
+# Integration with Donkey Car (enable this!)
+integration:
+  donkeycar:
+    enabled: true                # ✅ Turn on for Donkey Car path export
+    path_resolution: 0.25        # [m] spacing between waypoints
+    lookahead_distance: 2.0      # [m] Donkey Car pure pursuit parameter
+    output_format: "donkey_path" # Format expected by GPS/path-following module
+    use_utm: true                # Convert to UTM coordinates
+    utm_zone: "33U"              # Replace with your location’s zone (e.g., "11S" for California)
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  file: "logs/optimizer.log"
+  console: true
+
+# Development/Debug Settings
+debug:
+  save_intermediate: false
+  verbose_solver: false
+  profile: false

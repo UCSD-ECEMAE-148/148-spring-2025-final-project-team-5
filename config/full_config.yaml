@@ -1,0 +1,83 @@
+optimization:
+  method: geometric            # Optimization type: geometric (alternatives: min_time)
+  geometric:
+    curvature_smoothing: 5     # Smoothing factor for curvature profile (higher = smoother)
+    max_offset_fraction: 0.7   # Max lateral offset allowed from track centerline as fraction of width
+    offset_smoothing: 10       # Smoothing for lateral offsets (affects smoothness of racing line)
+    raceline_smoothing: 3      # Final smoothing step on racing line coordinates
+  solver:
+    max_iterations: 1000       # Max iterations for optimizer
+    tolerance: 1e-6            # Numerical convergence threshold
+  velocity_profile:
+    method: curvature_based    # Velocity profile generator (curvature_based = simple, fast)
+    safety_factor: 0.9         # Scale velocity to stay below theoretical grip (1.0 = max grip)
+    smoothing: 10              # Smooth velocity profile after initial computation
+
+output:
+  save_trajectory: true        # Save trajectory as CSV
+  save_statistics: true        # Save statistics (lap time, avg speed, etc.)
+  save_tumftm_format: true     # Export TUMFTM-compatible CSV for simulator
+  save_visualization: true     # Save plots (trajectory, velocity, curvature, etc.)
+  formats:
+    trajectory: csv            # File format for trajectory (csv or txt)
+    use_semicolon: false       # Use semicolons instead of commas in CSV
+
+track:
+  name: berlin_2018            # Track CSV file in inputs/tracks/
+  import_options:
+    set_new_start: false       # If true, override starting line
+    new_start:
+      - 0.0
+      - -47.0                  # Coordinates for new start (if set_new_start = true)
+    flip_imp_track: false      # Flip track direction (if needed)
+    num_laps: 1                # Number of laps to simulate/optimize
+    min_track_width: 3.0       # Track width in meters (fallback if undefined in file)
+
+vehicle:
+  # ✅ Traxxas Ford Fiesta ST Rally VXL (2S LiPo battery config)
+  width: 0.285                 # [m] measured track width (wheel to wheel)
+  length: 0.465                # [m] overall vehicle length
+  wheelbase: 0.295             # [m] wheelbase (distance between axles)
+  mass: 2.18                   # [kg] with battery
+  cg_height: 0.05              # [m] estimated center of gravity height
+  inertia: 0.02                # [kg·m²] moment of inertia (approx from research paper)
+  friction_coeff: 1.2          # [unitless] tire-road grip coefficient
+  tire_model: simplified       # Simplified tire model (no lateral coupling)
+  max_velocity: 9.0            # [m/s] ≈ 32 km/h from spec
+  min_velocity: 0.2            # [m/s] small number to avoid divide-by-zero
+  max_long_acc: 2.0            # [m/s²] max forward acceleration (measured/estimated)
+  max_long_dec: -3.0           # [m/s²] max braking deceleration
+  max_lat_acc: 1.5             # [m/s²] lateral grip (cornering)
+
+  # Optional: useful for dynamic or MPC-based modeling
+  steering_ratio: 1.0          # [unitless] 1.0 = direct drive from servo
+  max_steering_angle: 0.45     # [rad] ~25.8 degrees
+
+visualization:
+  dpi: 150                     # Plot resolution (DPI)
+  figure_size:
+    - 14
+    - 10                       # [inches] Width x height of saved figures
+  racing_line:
+    arrow_spacing: 50          # Distance between direction arrows
+    colormap: RdYlGn           # Color map for speed gradient
+    line_width: 3              # Width of racing line
+    show_direction_arrows: true
+    show_velocity_colors: true
+  track:
+    boundary_color: black
+    boundary_width: 2
+    centerline_color: blue
+    centerline_style: "--"
+    show_boundaries: true
+    show_centerline: true
+    show_surface: true
+    surface_color: lightgray
+    surface_alpha: 0.5
+  velocity_profile:
+    show: true
+    color: blue
+    fill_alpha: 0.3
+  show_braking_zones: true     # Highlight braking zones in plot
+  show_curvature_plot: true    # Show curvature graph
+  show_lateral_g_plot: true    # Show lateral acceleration (g-forces) over time

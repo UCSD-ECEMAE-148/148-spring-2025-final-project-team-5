@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  trajectory-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: race_trajectory_optimizer
+    volumes:
+      # Mount source code for development
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./inputs:/app/inputs
+      - ./outputs:/app/outputs
+      - ./scripts:/app/scripts
+      
+      # Mount the TUMFTM package
+      - ./global_racetrajectory_optimization:/app/global_racetrajectory_optimization
+      
+    environment:
+      - PYTHONPATH=/app:/app/global_racetrajectory_optimization
+      - OPTIMIZER_CONFIG=/app/config/optimizer_config.yaml
+      
+    stdin_open: true
+    tty: true
+    
+    # For GUI applications (matplotlib plots)
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+
+  # Separate service for Jupyter development
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trajectory_optimizer_jupyter
+    command: jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/app
+    environment:
+      - PYTHONPATH=/app
