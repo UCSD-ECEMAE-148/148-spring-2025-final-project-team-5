@@ -1,125 +1,180 @@
-# Race Trajectory Optimizer
+# Race Trajectory Optimizer: Project Documentation
 
-This repository contains a custom setup of the TUMFTM Race Trajectory Optimizer, tailored for use with small-scale autonomous vehicles like the Traxxas Ford Fiesta ST RC car. The optimizer computes an optimal racing line and velocity profile from a track centerline.
-
----
-
-## 🚧 Setup Summary
-
-### ✅ Dockerized Build
-
-* Built with a `Dockerfile` that replicates exact dependency versions for reproducibility.
-* Mounted volumes for persistent `inputs/` and `outputs/`.
-
-### ❌ Original Issue
-
-* **`quadprog` dependency failed** due to compilation errors on newer Linux environments.
-
-### ✅ Fix
-
-* Replaced `quadprog` with a **custom wrapper using `cvxopt`**, maintaining compatibility with original interfaces.
-* Patched all downstream modules to call the wrapper seamlessly.
+## Overview
+This document outlines the configuration, setup, usage, and output structure for the Race Trajectory Optimizer, adapted for both large-scale tracks and miniature RC cars (like the Traxxas Ford Fiesta ST 1/18 platform).
 
 ---
 
-## ⚙️ Configuration Files
+## 1. Setup Summary
+### 🔧 Issues & Fixes
+- **Initial Issue**: `quadprog` was unavailable in the original TUMFTM dependency chain.
+- **Fix**: Created a `quadprog_wrapper.py` that internally uses `cvxopt` to emulate the same optimization functionality. This wrapper is loaded dynamically via:
+  ```python
+  import sys
+  sys.path.insert(0, '/app/src')
+  import quadprog_wrapper
+  sys.modules['quadprog'] = quadprog_wrapper
+  ```
 
-### `config/full_config.yaml`
+### 🛠 Starting from Scratch
+1. **Build the Docker Image**
+   ```bash
+   docker build -f Dockerfile.tumftm -t race-trajectory-optimizer-tumftm .
+   ```
 
-Comprehensive config covering:
+2. **Run the Docker Container**
+   ```bash
+   docker run --rm -it -v "$PWD":/app race-trajectory-optimizer-tumftm bash
+   ```
 
-* **Track**: width, new start, flipping, etc.
-* **Vehicle**: mass, dimensions, acceleration limits, max velocity.
-* **Optimization**: method (`geometric`), velocity profile (`curvature_based`), smoothing params.
-* **Output**: enables trajectory + statistics saving, visualization PNGs.
-* **Visualization**: plot styling and annotations (e.g., arrows, braking zones).
+3. **Convert Donkey Path (if needed)**
+   ```bash
+   python3 scripts/convert_donkey_path.py
+   ```
+   This generates `donkey_converted_track.csv` in the `inputs/tracks/` directory.
 
-### `config/optimizer_config.yaml`
+4. **Update Configuration File**
+   Ensure `full_config.yaml` specifies:
+   ```yaml
+   track:
+     name: donkey_converted_track
+   ```
 
-Used by `main_globaltraj.py` or other modules:
-
-* GGV diagram config
-* Discretization points
-* Cost weights (time, smoothness, tire usage)
-* IPOPT/SQP solver parameters
+5. **Run the Optimizer**
+   ```bash
+   ./optimize_track.sh
+   ```
 
 ---
 
-## 🚗 Vehicle Model - Traxxas Ford Fiesta ST
-
-Based on:
-
-* [Official Traxxas specs](https://traxxas.com/74154-4-ford-fiesta-st-bl-2s?t=support)
-* \[MPC student paper]\(attached PDF)
-
-Key parameters:
-
+## 2. Directory Structure
 ```
-mass: ~1.4 kg
-width: ~0.3 m
-length: ~0.5 m
-max_velocity: 7–10 m/s (realistically tested)
-friction_coeff: 1.2 (grippy surface)
+race_trajectory_optimizer/
+├── Dockerfile / Dockerfile.tumftm
+├── config/
+│   ├── full_config.yaml
+│   └── optimizer_config.yaml
+├── inputs/
+│   └── tracks/
+│       ├── berlin_2018.csv
+│       └── donkey_converted_track.csv
+├── outputs/
+├── src/
+├── scripts/
+├── run_final_optimizer.sh
+├── optimize_track.sh
+└── README.md
 ```
 
-These were converted and approximated in `full_config.yaml`.
+---
+
+## 3. Configuration Files
+### `full_config.yaml` (Primary Used)
+Defines vehicle, track, optimization, and visualization parameters.
+
+#### 🔹 Vehicle Parameters
+```yaml
+vehicle:
+  width: 0.285
+  max_velocity: 9.0
+  min_velocity: 2.0
+  max_lat_acc: 7.0
+  max_long_acc: 5.0
+  max_long_dec: -5.0
+  mass: 1.5
+  length: 0.4
+```
+
+#### 🔹 Optimization Method
+```yaml
+optimization:
+  method: geometric
+  velocity_profile:
+    method: curvature_based
+    safety_factor: 0.9
+    smoothing: 10
+```
+
+#### 🔹 Track Settings
+```yaml
+track:
+  name: donkey_converted_track
+  import_options:
+    flip_imp_track: false
+    min_track_width: 1.5
+    num_laps: 1
+```
 
 ---
 
-## 🏁 Inputs
-
-* `inputs/tracks/*.csv` → centerline or boundary-based tracks
-* `inputs/veh_dyn_info/*.csv` → GGV diagrams or acceleration limits
-* `config/*.yaml` → all config variants
-
----
-
-## 📤 Outputs
-
-* CSV trajectory with x/y/speed
-* PNG plots (`racing_line_analysis.png`)
-* JSON stats: lap time, max speed, etc.
-* Optional `donkey_path.csv` for DonkeyCar integration
+## 4. Input Format
+### 📥 Converted Donkey Path Format (Centerline with Uniform Widths)
+```csv
+# x_m,y_m,w_tr_right_m,w_tr_left_m
+0.0, 0.0, 0.75, 0.75
+1.0, 0.5, 0.75, 0.75
+...
+```
+This input is generated from the original DonkeyCar `x,y,throttle` CSV using `scripts/convert_donkey_path.py`.
 
 ---
 
-## 🚀 Running the Optimizer
+## 5. Output Format
+### 📤 Trajectory CSV Output
+Each trajectory is saved under:
+```
+outputs/<track_name>_trajectory.csv
+```
+With the following format:
+```csv
+x_m,y_m,psi_rad,vx_mps,ax_mps2,ay_mps2,kappa_radpm
+```
+Where:
+- `x_m, y_m`: Global coordinates
+- `psi_rad`: Heading angle
+- `vx_mps`: Velocity
+- `ax_mps2`: Longitudinal acceleration
+- `ay_mps2`: Lateral acceleration
+- `kappa_radpm`: Curvature
 
+---
+
+## 6. Visualizations
+Generated PNGs include:
+- Track boundaries
+- Velocity-colored racing line
+- Velocity profile over distance
+
+Saved to:
+```
+outputs/<track_name>_analysis.png
+```
+
+---
+
+## 7. Running the Optimizer
+### ✅ Inside Docker:
 ```bash
-./optimize_track.sh  # runs the geometric optimizer with full_config.yaml
+./optimize_track.sh
 ```
 
-This loads the input track, computes the optimized trajectory, saves output visuals and data.
-
----
-
-## 🔐 GitHub Deployment
-
-### Issue: `git push` failed due to removed password support
-
-✅ Fixed by setting up SSH authentication:
-
+### ✅ Manual CLI:
 ```bash
-ssh-keygen -t ed25519 -C "your_email@example.com"
-# Add ~/.ssh/id_ed25519.pub to GitHub SSH keys
-```
-
-Then update origin remote:
-
-```bash
-git remote set-url origin git@github.com:Aryamanj26/race-trajectory-optimizer.git
-git push -u origin main
+python3 src/race_trajectory_optimizer.py --track donkey_converted_track
 ```
 
 ---
 
-## 🧩 Future Extensions
-
-* Integrate real-time controller node
-* Enable DonkeyCar GPS/path integration
-* Support nonlinear tire models
-* Add friction maps for varying surfaces
+## 8. DonkeyCar Compatibility
+The optimizer supports converting DonkeyCar paths into optimizable formats. Once optimized, the output can be exported back for vehicle following.
 
 ---
 
-For any issues, please open a GitHub Issue or contact Aryaman Jadhav.
+## 9. Conclusion
+The Race Trajectory Optimizer is now capable of:
+- Running geometric-based optimization
+- Generating curvature-based velocity profiles
+- Exporting fully formatted trajectories and visualizations
+- Supporting miniature RC cars and standard tracks
+
+**Next steps**: Integrate the generated optimized trajectories into DonkeyCar's path-following logic.

@@ -23,7 +23,7 @@ output:
     use_semicolon: false       # Use semicolons instead of commas in CSV
 
 track:
-  name: berlin_2018            # Track CSV file in inputs/tracks/
+  name: donkey_converted_track            # Track CSV file in inputs/tracks/
   import_options:
     set_new_start: false       # If true, override starting line
     new_start:
