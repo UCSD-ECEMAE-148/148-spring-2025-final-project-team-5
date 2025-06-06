@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Output
+outputs/*
+!outputs/.gitkeep
+
+# Logs
+*.log
+*.tmp
+
+# Jupyter
+*.ipynb_checkpoints
+
+# OS Metadata
+.DS_Store
+
+# Env
+venv/
+.env/

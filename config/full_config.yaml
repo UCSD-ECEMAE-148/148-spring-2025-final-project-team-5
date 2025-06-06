@@ -1,83 +1,148 @@
-optimization:
-  method: geometric            # Optimization type: geometric (alternatives: min_time)
-  geometric:
-    curvature_smoothing: 5     # Smoothing factor for curvature profile (higher = smoother)
-    max_offset_fraction: 0.7   # Max lateral offset allowed from track centerline as fraction of width
-    offset_smoothing: 10       # Smoothing for lateral offsets (affects smoothness of racing line)
-    raceline_smoothing: 3      # Final smoothing step on racing line coordinates
-  solver:
-    max_iterations: 1000       # Max iterations for optimizer
-    tolerance: 1e-6            # Numerical convergence threshold
-  velocity_profile:
-    method: curvature_based    # Velocity profile generator (curvature_based = simple, fast)
-    safety_factor: 0.9         # Scale velocity to stay below theoretical grip (1.0 = max grip)
-    smoothing: 10              # Smooth velocity profile after initial computation
+# Race Trajectory Optimizer Configuration
+# Compatible with TUM Global Race Trajectory Optimization
 
+optimization:
+  # Available methods:
+  # - 'geometric'      : Simple geometric line (cuts corners based on curvature)
+  # - 'shortest_path'  : Shortest possible path (hugs inside of corners)
+  # - 'mincurv'        : Minimum curvature path (smoothest, best for constant speed!)
+  # - 'mincurv_iqp'    : Iterative minimum curvature (more accurate but slower)
+  # - 'mintime'        : Time-optimal trajectory (includes variable velocity)
+  method: mincurv              # For constant speed racing, use 'mincurv'!
+  
+  # Geometric method settings (only used when method='geometric')
+  geometric:
+    curvature_smoothing: 5     # Smoothing factor for curvature profile
+    max_offset_fraction: 0.7   # Max lateral offset from centerline (0-1)
+    offset_smoothing: 10       # Smoothing for lateral offsets
+    raceline_smoothing: 3      # Final smoothing on racing line
+  
+  # Minimum curvature settings (used for 'mincurv' and 'mincurv_iqp')
+  mincurv:
+    width_opt: 0.485           # [m] Optimized vehicle width (vehicle width + safety margin)
+    curvlim: 1000.0           # [1/m] Maximum allowed curvature (lower = wider turns)
+    iqp_iters_min: 3          # Minimum iterations for IQP solver
+    iqp_curverror_allowed: 0.01 # Allowed curvature error for IQP convergence
+    
+  # Mintime settings (only used when method='mintime')
+  mintime:
+    var_friction: null         # Variable friction: null, 'linear', or 'gauss'
+    warm_start: false          # Use previous solution as starting point
+    safe_traj: false           # Generate safe trajectory with reduced limits
+    ax_pos_safe: null          # [m/s²] Safe positive acceleration limit
+    ax_neg_safe: null          # [m/s²] Safe negative acceleration limit  
+    ay_safe: null              # [m/s²] Safe lateral acceleration limit
+    
+  # Velocity profile settings (used for all methods except mintime)
+  velocity_profile:
+    method: curvature_based    # How to calculate velocity from curvature
+    safety_factor: 0.9         # Scale down from theoretical max (0-1)
+    smoothing: 10              # Smoothing iterations for velocity profile
+    conv_filt_window: 7        # Convolution filter window size
+
+# Track preprocessing and spline fitting
+track_preparation:
+  stepsize_reg: 2.0            # [m] Step size for regular sampling
+  stepsize_interp_after_opt: 0.2  # [m] Step size for final interpolation
+  spline_degree: 3             # Spline polynomial degree (3 = cubic)
+  smoothing_factor: 10         # Spline smoothing (higher = smoother)
+  
 output:
-  save_trajectory: true        # Save trajectory as CSV
-  save_statistics: true        # Save statistics (lap time, avg speed, etc.)
-  save_tumftm_format: true     # Export TUMFTM-compatible CSV for simulator
-  save_visualization: true     # Save plots (trajectory, velocity, curvature, etc.)
+  save_trajectory: true        # Save optimized trajectory
+  save_statistics: true        # Save lap time and other stats
+  save_tumftm_format: true     # Export in TUM format
+  save_visualization: true     # Generate and save plots
   formats:
-    trajectory: csv            # File format for trajectory (csv or txt)
-    use_semicolon: false       # Use semicolons instead of commas in CSV
+    trajectory: csv            # Output format
+    use_semicolon: false       # CSV delimiter
+  export_path: ./outputs       # Output directory
 
 track:
-  name: donkey_converted_track            # Track CSV file in inputs/tracks/
+  name: donkey_converted_track # Track file name (without .csv)
   import_options:
-    set_new_start: false       # If true, override starting line
-    new_start:
-      - 0.0
-      - -47.0                  # Coordinates for new start (if set_new_start = true)
-    flip_imp_track: false      # Flip track direction (if needed)
-    num_laps: 1                # Number of laps to simulate/optimize
-    min_track_width: 3.0       # Track width in meters (fallback if undefined in file)
+    flip_imp_track: false      # Reverse track direction
+    set_new_start: false       # Override starting point
+    new_start: [0.0, -47.0]    # New start coordinates [x, y]
+    min_track_width: 3.0       # [m] Minimum enforced track width
+    num_laps: 1                # Number of laps (for mintime)
 
 vehicle:
-  # ✅ Traxxas Ford Fiesta ST Rally VXL (2S LiPo battery config)
-  width: 0.285                 # [m] measured track width (wheel to wheel)
-  length: 0.465                # [m] overall vehicle length
-  wheelbase: 0.295             # [m] wheelbase (distance between axles)
-  mass: 2.18                   # [kg] with battery
-  cg_height: 0.05              # [m] estimated center of gravity height
-  inertia: 0.02                # [kg·m²] moment of inertia (approx from research paper)
-  friction_coeff: 1.2          # [unitless] tire-road grip coefficient
-  tire_model: simplified       # Simplified tire model (no lateral coupling)
-  max_velocity: 9.0            # [m/s] ≈ 32 km/h from spec
-  min_velocity: 0.2            # [m/s] small number to avoid divide-by-zero
-  max_long_acc: 2.0            # [m/s²] max forward acceleration (measured/estimated)
-  max_long_dec: -3.0           # [m/s²] max braking deceleration
-  max_lat_acc: 1.5             # [m/s²] lateral grip (cornering)
+  # Traxxas Ford Fiesta ST Rally VXL (1/10 scale RC car)
+  width: 0.285                 # [m] Vehicle width (wheel to wheel)
+  length: 0.465                # [m] Overall length
+  wheelbase: 0.295             # [m] Distance between axles
+  mass: 2.18                   # [kg] Total mass with battery
+  
+  # Performance limits (critical for optimizer!)
+  max_velocity: 5.0            # [m/s] Maximum speed (18 km/h for indoor)
+  min_velocity: 0.5            # [m/s] Minimum speed (avoid numerical issues)
+  max_long_acc: 2.0            # [m/s²] Max forward acceleration
+  max_long_dec: -3.0           # [m/s²] Max braking deceleration
+  max_lat_acc: 2.5             # [m/s²] Max lateral acceleration (cornering)
+  
+  # Advanced parameters (mostly for mintime optimization)
+  curvlim: 50.0               # [1/m] Max curvature vehicle can handle
+  dragcoeff: 0.75             # Aerodynamic drag coefficient
+  downforce_coeff: 0.0        # Downforce coefficient (0 for RC car)
+  
+  # Tire and friction parameters
+  friction_coeff: 1.2         # Tire-road friction coefficient
+  tire_model: simplified      # Tire model type
+  
+  # Steering parameters
+  max_steering_angle: 0.45    # [rad] ~25.8 degrees
+  steering_ratio: 1.0         # Direct drive from servo
 
-  # Optional: useful for dynamic or MPC-based modeling
-  steering_ratio: 1.0          # [unitless] 1.0 = direct drive from servo
-  max_steering_angle: 0.45     # [rad] ~25.8 degrees
-
+# Visualization settings
 visualization:
-  dpi: 150                     # Plot resolution (DPI)
-  figure_size:
-    - 14
-    - 10                       # [inches] Width x height of saved figures
+  dpi: 150                    # Plot resolution
+  figure_size: [14, 10]       # [width, height] in inches
+  
   racing_line:
-    arrow_spacing: 50          # Distance between direction arrows
-    colormap: RdYlGn           # Color map for speed gradient
-    line_width: 3              # Width of racing line
+    colormap: RdYlGn          # Speed color gradient (red=slow, green=fast)
+    line_width: 3             # Racing line thickness
     show_direction_arrows: true
+    arrow_spacing: 50         # Points between arrows
     show_velocity_colors: true
+    
   track:
-    boundary_color: black
-    boundary_width: 2
-    centerline_color: blue
-    centerline_style: "--"
-    show_boundaries: true
-    show_centerline: true
-    show_surface: true
+    show_surface: true        # Fill track area
     surface_color: lightgray
     surface_alpha: 0.5
+    show_boundaries: true     # Show track edges
+    boundary_color: black
+    boundary_width: 2
+    show_centerline: true     # Show original centerline
+    centerline_color: blue
+    centerline_style: "--"
+    
   velocity_profile:
-    show: true
+    show: true                # Show velocity over distance plot
     color: blue
     fill_alpha: 0.3
-  show_braking_zones: true     # Highlight braking zones in plot
-  show_curvature_plot: true    # Show curvature graph
-  show_lateral_g_plot: true    # Show lateral acceleration (g-forces) over time
+    
+  additional_plots:
+    show_curvature: true      # Plot curvature profile
+    show_lateral_g: true      # Plot lateral acceleration
+    show_braking_zones: true  # Highlight braking areas
+    show_lap_time: true       # Display lap time on plot
+
+# Solver settings (advanced)
+solver:
+  max_iterations: 1000        # Maximum solver iterations
+  tolerance: 1e-6             # Convergence tolerance
+  verbose: true               # Print optimization progress
+  
+# GGV diagram settings (if using external GGV file)
+ggv:
+  use_file: false             # Use GGV diagram from file
+  file: null                  # Path to GGV file
+  scale_factor: 1.0           # Scale all accelerations
+
+# Lap time matrix settings (for parameter studies)
+lap_time_matrix:
+  enabled: false              # Generate lap time matrix
+  gg_scale_range: [0.3, 1.0]  # Range of grip scaling
+  gg_scale_step: 0.05         # Step size
+  speed_range: [100, 150]     # [km/h] Top speed range
+  speed_step: 5               # [km/h] Step size
