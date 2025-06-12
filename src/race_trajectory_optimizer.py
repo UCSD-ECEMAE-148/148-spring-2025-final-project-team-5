@@ -63,7 +63,8 @@ class RaceTrajectoryOptimizer:
                 "curvlim": self.config['vehicle'].get('curvlim', 1000.0),
                 "v_max": self.config['vehicle']['max_velocity'],
                 "mass": self.config['vehicle']['mass'],
-                "dragcoeff": self.config['vehicle'].get('dragcoeff', 0.75)
+                "dragcoeff": self.config['vehicle'].get('dragcoeff', 0.75),
+                "g": self.config['vehicle'].get("g", 9.81)
             },
             "optim_opts": {
                 "width_opt": self.config['optimization'].get('mincurv', {}).get('width_opt', 
@@ -91,14 +92,70 @@ class RaceTrajectoryOptimizer:
             self.pars["optim_opts"]["iqp_curverror_allowed"] = mincurv_config.get('iqp_curverror_allowed', 0.01)
             self.pars["veh_params"]["curvlim"] = mincurv_config.get('curvlim', 1000.0)
             
+            
         elif self.tum_opt_type == 'mintime':
-            mintime_config = self.config['optimization'].get('mintime', {})
-            self.pars["optim_opts"]["var_friction"] = mintime_config.get('var_friction', None)
-            self.pars["optim_opts"]["warm_start"] = mintime_config.get('warm_start', False)
-            self.pars["optim_opts"]["safe_traj"] = mintime_config.get('safe_traj', False)
-            self.pars["optim_opts"]["ax_pos_safe"] = mintime_config.get('ax_pos_safe', None)
-            self.pars["optim_opts"]["ax_neg_safe"] = mintime_config.get('ax_neg_safe', None)
-            self.pars["optim_opts"]["ay_safe"] = mintime_config.get('ay_safe', None)
+            mt_cfg = self.config['optimization']['mintime']
+            v_cfg  = self.config['vehicle']
+
+            # 1) basic optim_opts
+            optim = self.pars["optim_opts"]
+            optim["var_friction"] = mt_cfg.get('var_friction', None)
+            optim["warm_start"]   = mt_cfg.get('warm_start', False)
+            optim["safe_traj"]    = mt_cfg.get('safe_traj', False)
+            optim["ax_pos_safe"]  = mt_cfg.get('ax_pos_safe', None)
+            optim["ax_neg_safe"]  = mt_cfg.get('ax_neg_safe', None)
+            optim["ay_safe"]      = mt_cfg.get('ay_safe', None)
+            optim["step_non_reg"] = mt_cfg.get('step_non_reg', 0.0)
+            optim["eps_kappa"]    = mt_cfg.get('eps_kappa', 1e-4)
+            optim["mue"]          = mt_cfg.get('mue', v_cfg.get('friction_coeff', 1.0))
+
+            # 2) curvature & heading preview/review
+            self.pars["curv_calc_opts"] = {
+                "d_preview_curv": mt_cfg.get("d_preview_curv", 2.0),
+                "d_review_curv":  mt_cfg.get("d_review_curv", 2.0),
+                "d_preview_head": mt_cfg.get("d_preview_head", 1.0),
+                "d_review_head":  mt_cfg.get("d_review_head", 1.0),
+            }
+
+            # 3) gravity
+            self.pars["veh_params"]["g"] = v_cfg.get("g", 9.81)
+
+            # 4) mintime vehicle parameters
+            wheelbase = v_cfg["wheelbase"]
+            track_w   = v_cfg.get("track_width", v_cfg["width"])
+            self.pars["vehicle_params_mintime"] = {
+                "wheelbase_front": wheelbase/2,
+                "wheelbase_rear":  wheelbase/2,
+                "wheelbase":       wheelbase,
+                "track_width_front": track_w,
+                "track_width_rear":  track_w,
+                "cog_z":           v_cfg.get("cog_height", 0.0),
+                "I_z":             v_cfg.get("moment_of_inertia", 0.0),
+                "liftcoeff_front": v_cfg.get("downforce_coeff", 0.0),
+                "liftcoeff_rear":  v_cfg.get("downforce_coeff", 0.0),
+                "k_brake_front":   v_cfg.get("brake_distribution", 0.5),
+                "k_drive_front":   v_cfg.get("drive_distribution", 0.0),
+                "k_roll":          v_cfg["k_roll"],
+                "delta_max":       v_cfg["max_steering_angle"],
+                "power_max":       v_cfg["max_power"],
+                "f_drive_max":     v_cfg["max_drive_force"],
+                "f_brake_max":     v_cfg["max_brake_force"]
+            }
+
+            # 5) tire parameters
+            self.pars["tire_params_mintime"] = self.config.get("tire_params", {})
+            self.pars["pwr_params_mintime"] = self.config.get("pwr_params_mintime", {
+            "pwr_behavior": False
+            })
+
+            self.pars["optim_opts"]["limit_energy"]  = self.config.get("limit_energy", False)
+            self.pars["optim_opts"]["energy_limit"]  = self.config.get("energy_limit", 0.0)
+            # regularization penalties for drive/brake and steering smoothness
+            self.pars["optim_opts"]["penalty_F"]     = self.config.get("penalty_F", 0.0)
+            self.pars["optim_opts"]["penalty_delta"] = self.config.get("penalty_delta", 0.0)
+
+
+
 
     def optimize_track(self, track_name=None):
         """Main optimization function"""
@@ -223,27 +280,60 @@ class RaceTrajectoryOptimizer:
             )
             
         elif self.tum_opt_type == 'mintime':
-            # For mintime, we need additional setup
             import opt_mintime_traj
-            
-            # Create dummy file paths
             file_paths = {
                 "module": self.module_path,
                 "tpamap": "dummy",
                 "tpadata": "dummy",
                 "mintime_export": "./outputs/mintime"
             }
-            
-            # Extend parameters for mintime
-            self.pars["curv_calc_opts"] = {"iqp_iters_min": 3}
+
+            v = self.config["vehicle"]
+            # pull in your tire block too:
+            t = self.config.get("tire_params", {})
+
+            # assemble the dict exactly as opt_mintime.py expects:
             self.pars["vehicle_params_mintime"] = {
-                "wheelbase_front": self.config['vehicle']['wheelbase'] / 2,
-                "wheelbase_rear": self.config['vehicle']['wheelbase'] / 2,
-                "wheelbase": self.config['vehicle']['wheelbase']
+                "wheelbase_front":     v["wheelbase"] / 2,
+                "wheelbase_rear":      v["wheelbase"] / 2,
+                "wheelbase":           v["wheelbase"],
+                "track_width_front":   v["track_width_front"],
+                "track_width_rear":    v["track_width_rear"],
+                "cog_z":               v["cog_height"],
+                "I_z":                 v["moment_of_inertia"],
+                # map your single downforce_coeff → liftcoeff_{front, rear}
+                "liftcoeff_front":     v.get("downforce_front", v.get("downforce_coeff", 0.0)),
+                "liftcoeff_rear":      v.get("downforce_rear",  v.get("downforce_coeff", 0.0)),
+                "k_roll":              v["k_roll"],
+                "k_drive_front":       v["k_drive_front"],
+                "k_brake_front":       v["k_brake_front"],
+                "delta_max":           v["delta_max"],
+                "power_max":           v["max_power"],
+                "f_drive_max":         v["max_drive_force"],
+                "f_brake_max":         v["max_brake_force"],
+                "t_delta":             v["steering_time_constant"],
+                "t_drive":             v["drive_time_constant"],
+                "t_brake":             v["brake_time_constant"],
             }
-            self.pars["tire_params_mintime"] = {}
-            self.pars["pwr_params_mintime"] = {}
-            
+
+            # tire parameters for the Kamm’s circle constraints:
+            self.pars["tire_params_mintime"] = {
+                "c_roll":    t["c_roll"],
+                "f_z0":      t["f_z0"],
+                "B_front":   t["B_front"],
+                "C_front":   t["C_front"],
+                "eps_front": t["eps_front"],
+                "E_front":   t["E_front"],
+                "B_rear":    t["B_rear"],
+                "C_rear":    t["C_rear"],
+                "eps_rear":  t["eps_rear"],
+                "E_rear":    t["E_rear"],
+            }
+
+            # disable the powertrain branch:
+            self.pars["pwr_params_mintime"] = {"pwr_behavior": False}
+
+            # now call the TUM module
             alpha_opt, self.v_opt, _, _, _ = opt_mintime_traj.src.opt_mintime.opt_mintime(
                 reftrack=reftrack_interp,
                 coeffs_x=coeffs_x_interp,
@@ -256,6 +346,7 @@ class RaceTrajectoryOptimizer:
                 print_debug=True,
                 plot_debug=False
             )
+
         else:
             # Fallback to simple geometric (if method='geometric')
             print("Using geometric optimization")

@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./global_racetrajectory_optimization"
+    ]
+}

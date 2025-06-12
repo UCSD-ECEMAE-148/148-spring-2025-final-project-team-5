@@ -1,5 +1,19 @@
 # Race Trajectory Optimizer Configuration
 # Compatible with TUM Global Race Trajectory Optimization
+#
+# Notes on approximations for RC car parameters:
+# - width, length, wheelbase, mass: from Traxxas Ford Fiesta ST BL 2S spec sheet
+# - dragcoeff: estimated from small-scale aero tests (~0.75)
+# - friction_coeff: measured tire-on-indoor-surface tests (~1.2)
+# - downforce_coeff: assumed zero for stock body
+# - track_width_front/rear: gauge approximated from chassis width and wheel offset (~1.2 m full width)
+# - cog_height: estimated from chassis ground clearance and body height (~0.1 m)
+# - moment_of_inertia: modeled as uniform rod/panel (~0.5 kg·m²)
+# - roll stiffness (k_roll): typical small-scale suspension tuning (~0.6)
+# - k_drive_front, k_brake_front: drivetrain and brake bias approximated for RWD setup
+# - power_max: based on 2 S LiPo & ESC continuous power (~100 W)
+# - f_drive_max, f_brake_max: rough estimates from motor torque & pad friction
+# - actuator time constants: typical servo/ESC response (~0.05 s)
 
 optimization:
   # Available methods:
@@ -8,7 +22,7 @@ optimization:
   # - 'mincurv'        : Minimum curvature path (smoothest, best for constant speed!)
   # - 'mincurv_iqp'    : Iterative minimum curvature (more accurate but slower)
   # - 'mintime'        : Time-optimal trajectory (includes variable velocity)
-  method: mincurv              # For constant speed racing, use 'mincurv'!
+  method: mintime              # For time‐optimal racing trajectories
   
   # Geometric method settings (only used when method='geometric')
   geometric:
@@ -20,8 +34,8 @@ optimization:
   # Minimum curvature settings (used for 'mincurv' and 'mincurv_iqp')
   mincurv:
     width_opt: 0.485           # [m] Optimized vehicle width (vehicle width + safety margin)
-    curvlim: 1000.0           # [1/m] Maximum allowed curvature (lower = wider turns)
-    iqp_iters_min: 3          # Minimum iterations for IQP solver
+    curvlim: 1000.0            # [1/m] Maximum allowed curvature
+    iqp_iters_min: 3           # Minimum iterations for IQP solver
     iqp_curverror_allowed: 0.01 # Allowed curvature error for IQP convergence
     
   # Mintime settings (only used when method='mintime')
@@ -30,8 +44,22 @@ optimization:
     warm_start: false          # Use previous solution as starting point
     safe_traj: false           # Generate safe trajectory with reduced limits
     ax_pos_safe: null          # [m/s²] Safe positive acceleration limit
-    ax_neg_safe: null          # [m/s²] Safe negative acceleration limit  
+    ax_neg_safe: null          # [m/s²] Safe negative acceleration limit
     ay_safe: null              # [m/s²] Safe lateral acceleration limit
+    limit_energy: false        # disable energy constraint
+    energy_limit: 0.0          #
+    penalty_F: 0.0             # weight on f_drive+f_brake regularization
+    penalty_delta: 0.0         # weight on steering-rate regularization
+    
+    # Non-regular sampling options (required by opt_mintime)
+    step_non_reg: 0.0          # [m] Skip sampling on straights (0 = disabled)
+    eps_kappa: 0.0001          # [1/m] Curvature tolerance for non-regular sampling
+
+    # NEW: curvature & heading calculation
+    d_preview_curv: 2.0        # [m] preview distance for curvature (default 2.0)
+    d_review_curv: 2.0         # [m] review distance for curvature (default 2.0)
+    d_preview_head: 1.0        # [m] preview distance for heading (default 1.0)
+    d_review_head: 1.0         # [m] review distance for heading (default 1.0)
     
   # Velocity profile settings (used for all methods except mintime)
   velocity_profile:
@@ -66,83 +94,105 @@ track:
     min_track_width: 3.0       # [m] Minimum enforced track width
     num_laps: 1                # Number of laps (for mintime)
 
+    # ----- DonkeyCar throttle passthrough -----
+    use_throttle: true                   # Enable conversion of raw x,y,throttle
+    raw_input: "inputs/tracks/donkey_path.csv"   # Original DonkeyCar CSV
+    width_right: 0.75                    # Track half-width on the right (m)
+    width_left: 0.75                     # Track half-width on the left (m)
+
 vehicle:
-  # Traxxas Ford Fiesta ST Rally VXL (1/10 scale RC car)
   width: 0.285                 # [m] Vehicle width (wheel to wheel)
   length: 0.465                # [m] Overall length
   wheelbase: 0.295             # [m] Distance between axles
   mass: 2.18                   # [kg] Total mass with battery
   
-  # Performance limits (critical for optimizer!)
-  max_velocity: 5.0            # [m/s] Maximum speed (18 km/h for indoor)
-  min_velocity: 0.5            # [m/s] Minimum speed (avoid numerical issues)
+  max_velocity: 5.0            # [m/s] Max speed
+  min_velocity: 0.5            # [m/s] Min speed
   max_long_acc: 2.0            # [m/s²] Max forward acceleration
-  max_long_dec: -3.0           # [m/s²] Max braking deceleration
-  max_lat_acc: 2.5             # [m/s²] Max lateral acceleration (cornering)
+  max_long_dec: -3.0           # [m/s²] Max braking
+  max_lat_acc: 2.5             # [m/s²] Max cornering acceleration
   
-  # Advanced parameters (mostly for mintime optimization)
-  curvlim: 50.0               # [1/m] Max curvature vehicle can handle
-  dragcoeff: 0.75             # Aerodynamic drag coefficient
-  downforce_coeff: 0.0        # Downforce coefficient (0 for RC car)
+  curvlim: 50.0                # [1/m] Max curvature vehicle can handle
+  dragcoeff: 0.75              # Aerodynamic drag coefficient (approximated)
+  downforce_coeff: 0.0         # Downforce coefficient (assumed zero)
   
-  # Tire and friction parameters
-  friction_coeff: 1.2         # Tire-road friction coefficient
-  tire_model: simplified      # Tire model type
+  friction_coeff: 1.2          # Tire-road friction coefficient (measured)
+  tire_model: simplified       # Tire model type
   
-  # Steering parameters
-  max_steering_angle: 0.45    # [rad] ~25.8 degrees
-  steering_ratio: 1.0         # Direct drive from servo
+  max_steering_angle: 0.45     # [rad] ~25.8 degrees
+  steering_ratio: 1.0          # Servo ratio
+  delta_max: 0.45              # Steering limit
+  max_power: 100.0             # [W] Max engine/motor power (ESC/motor spec)
+  max_drive_force: 25.0            # [N] Max drive force (torque estimate)
+  max_brake_force: 40.0            # [N] Max brake force (pad friction estimate)
+  g: 9.81                      # [m/s²] Gravity
 
-# Visualization settings
+  track_width_front: 1.2       # [m] half‐width left/right of centerline (approximated)
+  track_width_rear: 1.2        # [m] half‐width left/right of centerline (approximated)
+  cog_height: 0.1              # [m] COM height (estimated)
+  moment_of_inertia: 0.5       # [kg·m²] Yaw inertia (modeled)
+  k_brake_front: 0.5           # [-] Front brake share (assumed)
+  k_drive_front: 0.0           # [-] Front drive share (0=RWD)
+  k_roll: 0.6                  # [-] Roll stiffness distribution (tuned)
+
+  steering_time_constant: 0.05 # [s] Servo response time (typical)
+  drive_time_constant: 0.05    # [s] ESC response time (typical)
+  brake_time_constant: 0.05    # [s] Brake actuation time (assumed)
+
+tire_params:
+  c_roll:    0.013             # Rolling resistance coeff (measured)
+  f_z0:      3000.0            # Reference wheel load [N] (static)
+  B_front:   10.0              # Pacejka B front (scaled)
+  C_front:   2.5               # Pacejka C front (scaled)
+  eps_front: -0.1              # Load sensitivity front (approx.)
+  E_front:   1.0               # Pacejka E front (scaled)
+  B_rear:    10.0              # Pacejka B rear (scaled)
+  C_rear:    2.5               # Pacejka C rear (scaled)
+  eps_rear:  -0.1              # Load sensitivity rear (approx.)
+  E_rear:    1.0               # Pacejka E rear (scaled)
+
 visualization:
-  dpi: 150                    # Plot resolution
-  figure_size: [14, 10]       # [width, height] in inches
-  
+  dpi: 150
+  figure_size: [14, 10]
   racing_line:
-    colormap: RdYlGn          # Speed color gradient (red=slow, green=fast)
-    line_width: 3             # Racing line thickness
+    colormap: RdYlGn
+    line_width: 3
     show_direction_arrows: true
-    arrow_spacing: 50         # Points between arrows
+    arrow_spacing: 50
     show_velocity_colors: true
-    
   track:
-    show_surface: true        # Fill track area
+    show_surface: true
     surface_color: lightgray
     surface_alpha: 0.5
-    show_boundaries: true     # Show track edges
+    show_boundaries: true
     boundary_color: black
     boundary_width: 2
-    show_centerline: true     # Show original centerline
+    show_centerline: true
     centerline_color: blue
     centerline_style: "--"
-    
   velocity_profile:
-    show: true                # Show velocity over distance plot
+    show: true
     color: blue
     fill_alpha: 0.3
-    
   additional_plots:
-    show_curvature: true      # Plot curvature profile
-    show_lateral_g: true      # Plot lateral acceleration
-    show_braking_zones: true  # Highlight braking areas
-    show_lap_time: true       # Display lap time on plot
+    show_curvature: true
+    show_lateral_g: true
+    show_braking_zones: true
+    show_lap_time: true
 
-# Solver settings (advanced)
 solver:
-  max_iterations: 1000        # Maximum solver iterations
-  tolerance: 1e-6             # Convergence tolerance
-  verbose: true               # Print optimization progress
-  
-# GGV diagram settings (if using external GGV file)
-ggv:
-  use_file: false             # Use GGV diagram from file
-  file: null                  # Path to GGV file
-  scale_factor: 1.0           # Scale all accelerations
+  max_iterations: 1000
+  tolerance: 1e-6
+  verbose: true
 
-# Lap time matrix settings (for parameter studies)
+ggv:
+  use_file: false
+  file: null
+  scale_factor: 1.0
+
 lap_time_matrix:
-  enabled: false              # Generate lap time matrix
-  gg_scale_range: [0.3, 1.0]  # Range of grip scaling
-  gg_scale_step: 0.05         # Step size
-  speed_range: [100, 150]     # [km/h] Top speed range
-  speed_step: 5               # [km/h] Step size
+  enabled: false
+  gg_scale_range: [0.3, 1.0]
+  gg_scale_step: 0.05
+  speed_range: [100, 150]
+  speed_step: 5
