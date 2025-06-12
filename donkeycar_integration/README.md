@@ -1,5 +1,4 @@
 
-```markdown
 # 🏎️ TUM Race Trajectory Optimizer for DonkeyCar Integration
 
 This module integrates the [TUMFTM](https://github.com/TUMFTM/global_racetrajectory_optimization) race trajectory optimizer into a DonkeyCar project. It allows you to record a path using GPS, run an optimization pass on that path, and drive the optimal racing line using the DonkeyCar autopilot.
