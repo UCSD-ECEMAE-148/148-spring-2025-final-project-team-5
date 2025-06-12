@@ -41,9 +41,9 @@ pip install -r requirements.txt
 ```
 
 ### 🔺 Note
-> **Old Jetsons like Nano or TX2 may not support the full optimizer pipeline** due to version incompatibilities in packages like `cvxopt`, `casadi`, or `matplotlib`. We recommend running the optimizer offline (e.g., on your PC) and transferring the optimized CSV to the Jetson for path following.
+> **Old Jetsons like Nano or TX2 may not support the full optimizer pipeline** due to version incompatibilities in packages like `cvxopt`, `casadi`, or `matplotlib`. We recommend running the optimizer offline (e.g., on your PC) and transferring the optimized CSV to the Jetson for path following or using a newer jetson. 
 
-> **Note:** A modified `manage.py` is provided in `donkeycar_integration/` to demonstrate how to invoke the optimizer during autonomous path-following.
+> 📝 The modified `manage.py` is provided as part of this integration for reference.
 
 ---
 
@@ -121,8 +121,27 @@ class TUMPathOptimizer:
 
 ---
 
+## 🚀 Velocity Profile and Throttle Control
+Once integrated, the velocity profile from the optimized trajectory can also be used to directly control the throttle of the car. This can result in significantly faster lap times and smoother driving.
+
+However, if throttle becomes variable:
+- The PID controller used for steering or speed might behave inconsistently without tuning.
+
+### Proposed Solutions:
+1. **Throttle Feedforward**:
+   - Use the velocity from the optimizer as a feedforward term in your throttle controller.
+
+2. **Adaptive PID Gains**:
+   - Tune PID gains as a function of velocity to maintain stability across throttle changes.
+
+3. **Lookup Tables**:
+   - Predefine throttle values for each segment of the trajectory, synced with the optimizer's velocity profile.
+
+4. **Velocity Tracking Controller**:
+   - Implement a closed-loop controller that tries to match actual velocity to optimized target velocity (e.g., simple P-controller).
+
+---
+
 ## 📎 References
 - [TUM Global Trajectory Optimizer](https://github.com/TUMFTM/global_racetrajectory_optimization)
 - [DonkeyCar Docs](https://docs.donkeycar.com)
-
----
