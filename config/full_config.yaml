@@ -43,16 +43,16 @@ optimization:
     var_friction: null         # Variable friction: null, 'linear', or 'gauss'
     warm_start: false          # Use previous solution as starting point
     safe_traj: false           # Generate safe trajectory with reduced limits
-    ax_pos_safe: null          # [m/s²] Safe positive acceleration limit
-    ax_neg_safe: null          # [m/s²] Safe negative acceleration limit
-    ay_safe: null              # [m/s²] Safe lateral acceleration limit
+    ax_pos_safe: 1.5          # [m/s²] Safe positive acceleration limit
+    ax_neg_safe: -2.0          # [m/s²] Safe negative acceleration limit
+    ay_safe: 2.0              # [m/s²] Safe lateral acceleration limit
     limit_energy: false        # disable energy constraint
     energy_limit: 0.0          #
     penalty_F: 0.0             # weight on f_drive+f_brake regularization
     penalty_delta: 0.0         # weight on steering-rate regularization
     
     # Non-regular sampling options (required by opt_mintime)
-    step_non_reg: 0.0          # [m] Skip sampling on straights (0 = disabled)
+    step_non_reg: 0.5          # [m] Skip sampling on straights (0 = disabled)
     eps_kappa: 0.0001          # [1/m] Curvature tolerance for non-regular sampling
 
     # NEW: curvature & heading calculation

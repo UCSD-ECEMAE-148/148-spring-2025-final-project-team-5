@@ -1,8 +1,36 @@
 #!/usr/bin/env python3
 """
-Race Trajectory Optimizer using TUM optimizer
-Supports multiple optimization methods: geometric, mincurv, mincurv_iqp, mintime, shortest_path
+Race Trajectory Optimizer
+
+This module implements the `RaceTrajectoryOptimizer`, a high-level wrapper around the TUM 
+Global Race Trajectory Optimization toolbox. It supports multiple racing trajectory methods, 
+including:
+
+  • geometric       — simple corner-cutting based on track curvature  
+  • shortest_path   — hugs the inside line to minimize path length  
+  • mincurv         — minimizes curvature for smooth, constant-speed lines  
+  • mincurv_iqp     — iterative quadratic programming refinement of min-curv lines  
+  • mintime         — full time-optimal control via CasADi/IPOPT, optionally warm-started  
+  • (future) other methods as configured
+
+Key features:
+  - Reads a unified `full_config.yaml` for all optimizer, vehicle, track, and visualization settings  
+  - Preprocesses the track (spline fitting, regular/non-regular sampling, curvature/heading numerics)  
+  - Delegates to TUM’s helper routines (quadprog via CVXOPT, CasADi collocation, powertrain models)  
+  - Exports optimized trajectories, lap statistics, and optional plots in user-specified formats  
+  - Supports DonkeyCar throttle passthrough and multi-lap simulation for the mintime solver  
+  - Seamlessly wraps lower-level solvers (quadprog, CVXOPT, IPOPT) to minimize external dependencies  
+
+Usage:
+    from race_trajectory_optimizer import RaceTrajectoryOptimizer
+
+    optimizer = RaceTrajectoryOptimizer(config_path="full_config.yaml")
+    trajectory, reftrack = optimizer.optimize_track(track_name="my_track")
+
+For detailed parameter descriptions and tuning guidelines, see the accompanying `full_config.yaml` 
+and the TUM Race Car Optimization paper by Christ et al.
 """
+
 import sys
 import os
 import numpy as np
