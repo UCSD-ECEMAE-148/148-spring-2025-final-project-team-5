@@ -22,7 +22,7 @@ optimization:
   # - 'mincurv'        : Minimum curvature path (smoothest, best for constant speed!)
   # - 'mincurv_iqp'    : Iterative minimum curvature (more accurate but slower)
   # - 'mintime'        : Time-optimal trajectory (includes variable velocity)
-  method: mintime              # For time‐optimal racing trajectories
+  method: mincurv              # For time‐optimal racing trajectories
   
   # Geometric method settings (only used when method='geometric')
   geometric:

@@ -35,9 +35,11 @@ import sys
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import yaml
 import time
 import json
+from scipy.spatial import cKDTree
 from matplotlib.collections import LineCollection
 
 # Add TUM optimizer to path
@@ -80,6 +82,27 @@ class RaceTrajectoryOptimizer:
         
         # Load vehicle parameters for TUM optimizer
         self._setup_vehicle_params()
+        self._maybe_convert_throttle()
+        
+    def _maybe_convert_throttle(self):
+        """If enabled in config, convert raw donkey path into TUM format and store throttle vector."""
+        imp = self.config['track']['import_options']
+        if imp.get('use_throttle', False):
+            raw_csv = imp['raw_input']
+            df = pd.read_csv(raw_csv, header=None, names=["x","y","throttle"])
+            # inject widths
+            df["w_tr_right_m"] = imp['width_right']
+            df["w_tr_left_m"]  = imp['width_left']
+            # stash for export
+            self._throttle_points = df[["x","y"]].to_numpy()
+            self._throttle_vals   = df["throttle"].to_numpy()
+            # write out the converted input for optimizer
+            track_name = self.config['track']['name']
+            conv_path  = os.path.join("inputs", "tracks", f"{track_name}.csv")
+            df[["x","y","w_tr_right_m","w_tr_left_m"]].to_csv(
+                conv_path, index=False, header=False
+            )
+            print(f"✓ DonkeyCar path converted with throttle → {conv_path}")
 
     def _setup_vehicle_params(self):
         """Set up vehicle parameters in TUM format from config"""
@@ -267,8 +290,26 @@ class RaceTrajectoryOptimizer:
             
         if self.config['output']['save_visualization']:
             self._visualize_results(trajectory, reftrack_interp, normvec_normalized_interp, track_name)
+
+        if hasattr(self, '_throttle_points'):
+             self._export_throttle(trajectory, track_name)
         
         return trajectory, reftrack_interp
+    
+    def _export_throttle(self, traj, track_name):
+        """Match optimized points to original throttle and save x,y,throttle CSV"""
+        # build KDTree on original donkey points
+        tree = cKDTree(self._throttle_points)
+        pts = np.column_stack([traj[:,0], traj[:,1]])
+        _, idx = tree.query(pts)
+        thr = self._throttle_vals[idx]
+        out = np.column_stack([traj[:,0], traj[:,1], thr])
+        w_r = self.config['track']['import_options']['width_right']
+        w_l = self.config['track']['import_options']['width_left']
+        fname = f"outputs/donkey_optimized_path_{w_r:.2f}_{w_l:.2f}.csv"
+        np.savetxt(fname, out, delimiter=',', header='x,y,throttle', comments='')
+        print(f"✓ Saved donkey-compatible optimized path → {fname}")
+
 
     def _run_optimization(self, reftrack_interp, normvec_normalized_interp, a_interp, coeffs_x_interp, coeffs_y_interp):
         """Run the selected optimization method"""
