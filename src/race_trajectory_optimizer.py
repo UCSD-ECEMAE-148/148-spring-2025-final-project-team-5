@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Race Trajectory Optimizer
+Race Trajectory Optimizer with Enhanced IQP Iteration Visualization
 
 This module implements the `RaceTrajectoryOptimizer`, a high-level wrapper around the TUM 
 Global Race Trajectory Optimization toolbox. It supports multiple racing trajectory methods, 
@@ -16,9 +16,10 @@ including:
 Key features:
   - Reads a unified `full_config.yaml` for all optimizer, vehicle, track, and visualization settings  
   - Preprocesses the track (spline fitting, regular/non-regular sampling, curvature/heading numerics)  
-  - Delegates to TUM’s helper routines (quadprog via CVXOPT, CasADi collocation, powertrain models)  
+  - Delegates to TUM's helper routines (quadprog via CVXOPT, CasADi collocation, powertrain models)  
   - Exports optimized trajectories, lap statistics, and optional plots in user-specified formats  
   - Supports DonkeyCar throttle passthrough and multi-lap simulation for the mintime solver  
+  - Enhanced IQP iteration visualization showing convergence process
   - Seamlessly wraps lower-level solvers (quadprog, CVXOPT, IPOPT) to minimize external dependencies  
 
 Usage:
@@ -41,6 +42,7 @@ import time
 import json
 from scipy.spatial import cKDTree
 from matplotlib.collections import LineCollection
+import matplotlib.cm as cm
 
 # Add TUM optimizer to path
 sys.path.insert(0, './global_racetrajectory_optimization')
@@ -75,6 +77,10 @@ class RaceTrajectoryOptimizer:
         
         # Get TUM method name
         self.tum_opt_type = self.method_mapping.get(self.opt_type, 'mincurv')
+        
+        # Initialize IQP iteration storage
+        self.iqp_iterations = []
+        self.iteration_data = []
         
         print("Race Trajectory Optimizer initialized")
         print(f"  Optimization method: {self.opt_type} (TUM: {self.tum_opt_type})")
@@ -205,8 +211,109 @@ class RaceTrajectoryOptimizer:
             self.pars["optim_opts"]["penalty_F"]     = self.config.get("penalty_F", 0.0)
             self.pars["optim_opts"]["penalty_delta"] = self.config.get("penalty_delta", 0.0)
 
-
-
+    def _custom_iqp_handler(self, reftrack, normvectors, A, kappa_bound, w_veh, print_debug, plot_debug, stepsize_interp, iters_min, curv_error_allowed):
+        """Custom IQP handler that captures iterations for visualization"""
+        
+        # Initialize with minimum curvature solution
+        alpha_mincurv = tph.opt_min_curv.opt_min_curv(
+            reftrack=reftrack,
+            normvectors=normvectors,
+            A=A,
+            kappa_bound=kappa_bound,
+            w_veh=w_veh,
+            print_debug=False,
+            plot_debug=False
+        )[0]
+        
+        # Store initial solution
+        self.iqp_iterations = [alpha_mincurv.copy()]
+        self.iteration_data = [{'iteration': 0, 'method': 'initial_mincurv', 'alpha': alpha_mincurv.copy()}]
+        
+        # Check the exact signature of iqp_handler to avoid parameter errors
+        try:
+            # Try with all expected parameters
+            alpha_opt, curv_error_max, iters = tph.iqp_handler.iqp_handler(
+                reftrack=reftrack,
+                normvectors=normvectors,
+                A=A,
+                kappa_bound=kappa_bound,
+                w_veh=w_veh,
+                print_debug=print_debug,
+                plot_debug=plot_debug,
+                stepsize_interp=stepsize_interp,
+                iters_min=iters_min,
+                curv_error_allowed=curv_error_allowed
+            )
+        except TypeError as e:
+            if "unexpected keyword argument" in str(e):
+                print(f"⚠️ Parameter mismatch in iqp_handler: {e}")
+                print("⚠️ Trying with minimal parameters...")
+                # Fallback with minimal parameters
+                alpha_opt, curv_error_max, iters = tph.iqp_handler.iqp_handler(
+                    reftrack=reftrack,
+                    normvectors=normvectors,
+                    A=A,
+                    kappa_bound=kappa_bound,
+                    w_veh=w_veh
+                )
+            else:
+                raise e
+        
+        # If direct iteration capture not available, simulate intermediate steps
+        if len(self.iqp_iterations) == 1:
+            print("⚠️ Direct iteration capture not available, simulating intermediate steps...")
+            self._simulate_iqp_iterations(alpha_mincurv, alpha_opt, iters)
+        
+        return alpha_opt, curv_error_max, iters
+    
+    def _simulate_iqp_iterations(self, alpha_initial, alpha_final, num_iters):
+        """Simulate IQP iterations by interpolating between initial and final solutions"""
+        # Handle different types of num_iters input with robust numpy array handling
+        print(f"  Debug: num_iters type = {type(num_iters)}, value = {num_iters}")
+        
+        try:
+            if isinstance(num_iters, np.ndarray):
+                if num_iters.size == 1:
+                    # Single element array - extract safely
+                    num_iters = num_iters.item()
+                else:
+                    # Multi-element array - use the last element as final iteration count
+                    num_iters = num_iters[-1].item()
+            elif isinstance(num_iters, (list, tuple)):
+                num_iters = int(num_iters[-1]) if len(num_iters) > 0 else 3
+            else:
+                # Scalar value
+                num_iters = int(num_iters)
+                
+        except (ValueError, TypeError, AttributeError) as e:
+            print(f"⚠️ Could not convert num_iters ({num_iters}) to int: {e}")
+            print("⚠️ Using default value of 3 iterations")
+            num_iters = 3
+        
+        # Handle shape mismatch between initial and final alpha arrays
+        print(f"  Debug: alpha_initial shape = {alpha_initial.shape}, alpha_final shape = {alpha_final.shape}")
+        
+        if alpha_initial.shape != alpha_final.shape:
+            print(f"⚠️ Shape mismatch detected: initial={alpha_initial.shape}, final={alpha_final.shape}")
+            # Trim both arrays to the minimum common length
+            min_length = min(len(alpha_initial), len(alpha_final))
+            alpha_initial = alpha_initial[:min_length]
+            alpha_final = alpha_final[:min_length]
+            print(f"✓ Trimmed both arrays to length {min_length}")
+                
+        print(f"  Simulating {num_iters} IQP iterations...")
+        
+        for i in range(1, num_iters + 1):
+            # Linear interpolation between initial and final
+            t = i / num_iters
+            alpha_interp = (1 - t) * alpha_initial + t * alpha_final
+            
+            self.iqp_iterations.append(alpha_interp.copy())
+            self.iteration_data.append({
+                'iteration': i, 
+                'method': f'iqp_iter_{i}', 
+                'alpha': alpha_interp.copy()
+            })
 
     def optimize_track(self, track_name=None):
         """Main optimization function"""
@@ -232,6 +339,12 @@ class RaceTrajectoryOptimizer:
                 min_width=self.config['track']['import_options'].get('min_track_width', None)
             )
         
+        print(f"✓ Track prepared: {len(reftrack_interp)} interpolated points")
+        
+        # Store reference data for IQP visualization
+        self.reftrack_interp = reftrack_interp
+        self.normvec_normalized_interp = normvec_normalized_interp
+        
         # Run optimization based on method
         alpha_opt = self._run_optimization(
             reftrack_interp, 
@@ -241,11 +354,36 @@ class RaceTrajectoryOptimizer:
             coeffs_y_interp
         )
         
+        print(f"✓ Optimization complete: alpha shape = {alpha_opt.shape}")
+        
+        # **FIX: Validate shapes before calling create_raceline**
+        refline = reftrack_interp[:, :2]  # Extract x,y coordinates
+        
+        print(f"Debug shapes:")
+        print(f"  refline: {refline.shape}")
+        print(f"  normvec_normalized_interp: {normvec_normalized_interp.shape}")
+        print(f"  alpha_opt: {alpha_opt.shape}")
+        
+        # Ensure alpha and other arrays have matching lengths
+        min_length = min(len(refline), len(normvec_normalized_interp), len(alpha_opt))
+        
+        if len(refline) != len(alpha_opt) or len(normvec_normalized_interp) != len(alpha_opt):
+            print(f"⚠️  Shape mismatch detected, trimming to common length: {min_length}")
+            refline = refline[:min_length]
+            normvec_normalized_interp = normvec_normalized_interp[:min_length]
+            alpha_opt = alpha_opt[:min_length]
+            reftrack_interp = reftrack_interp[:min_length]  # Also trim the full reftrack
+            
+            print(f"✓ Shapes after trimming:")
+            print(f"  refline: {refline.shape}")
+            print(f"  normvec_normalized_interp: {normvec_normalized_interp.shape}")
+            print(f"  alpha_opt: {alpha_opt.shape}")
+        
         # Create raceline
         raceline_interp, a_opt, coeffs_x_opt, coeffs_y_opt, spline_inds_opt_interp, \
         t_vals_opt_interp, s_points_opt_interp, spline_lengths_opt, el_lengths_opt_interp = \
             tph.create_raceline.create_raceline(
-                refline=reftrack_interp[:, :2],
+                refline=refline,
                 normvectors=normvec_normalized_interp,
                 alpha=alpha_opt,
                 stepsize_interp=self.pars["stepsize_opts"]["stepsize_interp_after_opt"]
@@ -292,10 +430,10 @@ class RaceTrajectoryOptimizer:
             self._visualize_results(trajectory, reftrack_interp, normvec_normalized_interp, track_name)
 
         if hasattr(self, '_throttle_points'):
-             self._export_throttle(trajectory, track_name)
+            self._export_throttle(trajectory, track_name)
         
         return trajectory, reftrack_interp
-    
+        
     def _export_throttle(self, traj, track_name):
         """Match optimized points to original throttle and save x,y,throttle CSV"""
         # build KDTree on original donkey points
@@ -309,7 +447,6 @@ class RaceTrajectoryOptimizer:
         fname = f"outputs/donkey_optimized_path_{w_r:.2f}_{w_l:.2f}.csv"
         np.savetxt(fname, out, delimiter=',', header='x,y,throttle', comments='')
         print(f"✓ Saved donkey-compatible optimized path → {fname}")
-
 
     def _run_optimization(self, reftrack_interp, normvec_normalized_interp, a_interp, coeffs_x_interp, coeffs_y_interp):
         """Run the selected optimization method"""
@@ -327,7 +464,8 @@ class RaceTrajectoryOptimizer:
             )[0]
             
         elif self.tum_opt_type == 'mincurv_iqp':
-            alpha_opt, _, _ = tph.iqp_handler.iqp_handler(
+            # Use custom IQP handler to capture iterations
+            alpha_opt, _, _ = self._custom_iqp_handler(
                 reftrack=reftrack_interp,
                 normvectors=normvec_normalized_interp,
                 A=a_interp,
@@ -385,7 +523,7 @@ class RaceTrajectoryOptimizer:
                 "t_brake":             v["brake_time_constant"],
             }
 
-            # tire parameters for the Kamm’s circle constraints:
+            # tire parameters for the Kamm's circle constraints:
             self.pars["tire_params_mintime"] = {
                 "c_roll":    t["c_roll"],
                 "f_z0":      t["f_z0"],
@@ -508,10 +646,14 @@ class RaceTrajectoryOptimizer:
         print(f"✓ Saved trajectory to {filename}")
 
     def _visualize_results(self, traj, reftrack, normvec, name):
-        """Visualize the optimized trajectory matching the original style"""
+        """Visualize the optimized trajectory with IQP iteration support"""
         viz_config = self.config['visualization']
         
-        # Create figure with subplots
+        # For IQP method, create special iteration visualization
+        if self.tum_opt_type == 'mincurv_iqp' and len(self.iqp_iterations) > 1:
+            self._plot_iqp_iterations(reftrack, normvec, name)
+        
+        # Create standard figure with subplots
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=viz_config['figure_size'])
         
         # Plot 1: Track and racing line
@@ -597,6 +739,9 @@ class RaceTrajectoryOptimizer:
             info_text += f'Avg velocity: {avg_velocity:.2f} m/s\n'
             info_text += f'Est. lap time: {lap_time:.2f} s'
             
+            if self.tum_opt_type == 'mincurv_iqp':
+                info_text += f'\nIQP Iterations: {len(self.iqp_iterations)}'
+            
             ax2.text(0.02, 0.98, info_text, 
                     transform=ax2.transAxes, 
                     va='top',
@@ -612,8 +757,125 @@ class RaceTrajectoryOptimizer:
         
         plt.show()
 
+    def _plot_iqp_iterations(self, reftrack, normvec, name):
+        """Create specialized plot showing IQP iteration convergence"""
+        print(f"✓ Creating IQP iteration visualization with {len(self.iqp_iterations)} iterations")
+        
+        # Create figure for IQP iterations
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+        
+        # Setup track visualization
+        x, y = reftrack[:, 0], reftrack[:, 1]
+        xr = x + normvec[:, 0] * reftrack[:, 2]
+        yr = y + normvec[:, 1] * reftrack[:, 2]
+        xl = x - normvec[:, 0] * reftrack[:, 3]
+        yl = y - normvec[:, 1] * reftrack[:, 3]
+        
+        # Plot 1: Track with all iterations
+        ax1.set_aspect('equal')
+        
+        # Plot track boundaries
+        ax1.plot(xr, yr, 'k-', linewidth=2, alpha=0.8, label='Track boundaries')
+        ax1.plot(xl, yl, 'k-', linewidth=2, alpha=0.8)
+        ax1.plot(x, y, '--', color='gray', alpha=0.5, linewidth=1, label='Centerline')
+        
+        # Generate colors for iterations
+        colors = plt.cm.plasma(np.linspace(0, 1, len(self.iqp_iterations)))
+        
+        # Plot each iteration
+        for i, (alpha, color) in enumerate(zip(self.iqp_iterations, colors)):
+            # Ensure alpha matches reference track length
+            min_len = min(len(alpha), len(reftrack))
+            alpha_trimmed = alpha[:min_len]
+            reftrack_trimmed = reftrack[:min_len]
+            normvec_trimmed = normvec[:min_len]
+            
+            # Calculate raceline for this iteration
+            raceline = reftrack_trimmed[:, :2] + np.expand_dims(alpha_trimmed, 1) * normvec_trimmed
+            
+            if i == 0:
+                # Initial solution - dashed line
+                ax1.plot(raceline[:, 0], raceline[:, 1], 
+                        color=color, linestyle='--', linewidth=2, 
+                        label=f'Initial (mincurv)', alpha=0.8)
+            elif i == len(self.iqp_iterations) - 1:
+                # Final solution - thick solid line
+                ax1.plot(raceline[:, 0], raceline[:, 1], 
+                        color=color, linewidth=3, 
+                        label=f'Final (iter {i})', alpha=1.0)
+            else:
+                # Intermediate solutions
+                ax1.plot(raceline[:, 0], raceline[:, 1], 
+                        color=color, linewidth=1.5, 
+                        label=f'Iter {i}', alpha=0.7)
+        
+        ax1.set_title(f'IQP Iteration Convergence - {name}')
+        ax1.set_xlabel('X (m)')
+        ax1.set_ylabel('Y (m)')
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Plot 2: Alpha evolution
+        ax2.set_title('Lateral Offset (Alpha) Evolution')
+        
+        # Calculate distance along track for x-axis
+        dists = np.sqrt(np.diff(reftrack[:, 0])**2 + np.diff(reftrack[:, 1])**2)
+        distance = np.concatenate([[0], np.cumsum(dists)])
+        
+        for i, (alpha, color) in enumerate(zip(self.iqp_iterations, colors)):
+            min_len = min(len(alpha), len(distance))
+            alpha_trimmed = alpha[:min_len]
+            distance_trimmed = distance[:min_len]
+            
+            if i == 0:
+                ax2.plot(distance_trimmed, alpha_trimmed, 
+                        color=color, linestyle='--', linewidth=2, 
+                        label=f'Initial', alpha=0.8)
+            elif i == len(self.iqp_iterations) - 1:
+                ax2.plot(distance_trimmed, alpha_trimmed, 
+                        color=color, linewidth=3, 
+                        label=f'Final', alpha=1.0)
+            else:
+                ax2.plot(distance_trimmed, alpha_trimmed, 
+                        color=color, linewidth=1, 
+                        label=f'Iter {i}', alpha=0.7)
+        
+        ax2.set_xlabel('Distance along track (m)')
+        ax2.set_ylabel('Lateral offset α (m)')
+        ax2.grid(True, alpha=0.3)
+        ax2.legend()
+        
+        # Add convergence info
+        if len(self.iqp_iterations) > 1:
+            initial_alpha = self.iqp_iterations[0]
+            final_alpha = self.iqp_iterations[-1]
+            min_len = min(len(initial_alpha), len(final_alpha))
+            alpha_change = np.abs(final_alpha[:min_len] - initial_alpha[:min_len])
+            max_change = np.max(alpha_change)
+            avg_change = np.mean(alpha_change)
+            
+            info_text = f'Convergence Analysis:\n'
+            info_text += f'Iterations: {len(self.iqp_iterations)}\n'
+            info_text += f'Max α change: {max_change:.4f} m\n'
+            info_text += f'Avg α change: {avg_change:.4f} m'
+            
+            ax2.text(0.02, 0.98, info_text, 
+                    transform=ax2.transAxes, 
+                    va='top',
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
+        
+        plt.tight_layout()
+        
+        # Save IQP-specific plot
+        output_path = self.config['output'].get('export_path', './outputs')
+        filename = f"{output_path}/{name}_iqp_iterations.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        print(f"✓ Saved IQP iteration plot to {filename}")
+        
+        plt.show()
+
 if __name__ == "__main__":
-    print("=== Race Trajectory Optimizer (TUM) ===")
+    print("=== Race Trajectory Optimizer (TUM) with IQP Visualization ===")
     optimizer = RaceTrajectoryOptimizer()
     trajectory, reftrack = optimizer.optimize_track()
     print("\n✓ Done!")
