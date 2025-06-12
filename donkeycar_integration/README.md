@@ -43,6 +43,8 @@ pip install -r requirements.txt
 ### 🔺 Note
 > **Old Jetsons like Nano or TX2 may not support the full optimizer pipeline** due to version incompatibilities in packages like `cvxopt`, `casadi`, or `matplotlib`. We recommend running the optimizer offline (e.g., on your PC) and transferring the optimized CSV to the Jetson for path following.
 
+> **Note:** A modified `manage.py` is provided in `donkeycar_integration/` to demonstrate how to invoke the optimizer during autonomous path-following.
+
 ---
 
 ## 🚗 DonkeyCar Integration
