@@ -1,13 +1,3 @@
-Here’s your **final `README.md`** for the `optimizer_tumftm` part, fully documenting:
-
-* 📌 Purpose of the optimizer
-* ⚙️ Directory structure
-* 🧩 How it integrates with DonkeyCar
-* 🛠️ Setup instructions (with/without Docker)
-* 🚗 How to run optimized path following
-* 💡 Customization notes
-
----
 
 ```markdown
 # 🏎️ TUM Race Trajectory Optimizer for DonkeyCar Integration
