@@ -228,6 +228,54 @@ python3 src/race_trajectory_optimizer.py \
 
 ---
 
+## 🏎️ DonkeyCar Path Following Tuning
+
+These parameters, defined in your DonkeyCar path follower (e.g., in `manage.py`), control path search and PID behavior:
+
+* `PATH_SEARCH_LENGTH` (int): Number of points to search for the closest path point. Larger values improve robustness on noisy data but increase computation. Set to `None` to search the entire path.
+* `PATH_LOOK_AHEAD` (int): Number of points ahead of the closest point to include when computing the cross-track error (CTE). Increasing this smooths steering at the cost of lag.
+* `PATH_LOOK_BEHIND` (int): Number of points behind the closest point to include in the CTE calculation.
+* `PID_P` (float): Proportional gain for the PID controller. Higher values increase responsiveness but may cause oscillations.
+* `PID_I` (float): Integral gain for the PID controller. Helps eliminate steady-state error but may introduce drift.
+* `PID_D` (float): Derivative gain for the PID controller. Dampens overshoot but may amplify noise.
+* `PID_THROTTLE` (float): Constant throttle value when `USE_CONSTANT_THROTTLE=True`. Use to fix speed during path following.
+* `USE_CONSTANT_THROTTLE` (bool): If `True`, uses `PID_THROTTLE`; otherwise uses the recorded throttle from the path.
+* `PID_P_DELTA` (float): Increment applied to `PID_P` when tuning interactively.
+* `PID_D_DELTA` (float): Increment applied to `PID_D` when tuning interactively.
+* `PATH_FILENAME` (string): Filename for saving recorded path points as comma‑separated x,y values.
+* `PATH_DEBUG` (bool): Enable verbose logging of raw x,y positions for debugging.
+* `PATH_SCALE` (float): Scale factor for displaying the path in the web interface.
+* `PATH_OFFSET` (tuple): Pixel offset (x,y) for the map origin in the web interface (e.g., `(255, 255)`).
+* `PATH_MIN_DIST` (float): Minimum travel distance (in meters) between successive recorded path points.
+
+Adjust these on-the-fly via your vehicle interface or config file to fine-tune steering responsiveness and speed control.
+
+---
+
+## 📡 GPS Laps Tuning
+
+We used the following path following parameters during testing:
+
+* `PATH_FILENAME` = "donkey\_path.csv"
+* `PATH_DEBUG` = True
+* `PATH_SCALE` = 10.0
+* `PATH_OFFSET` = (255, 255)
+* `PATH_MIN_DIST` = 0.2
+* `PATH_SEARCH_LENGTH` = 250
+* `PATH_LOOK_AHEAD` = 2
+* `PATH_LOOK_BEHIND` = 2
+* `PID_P` = 0.02
+* `PID_I` = 0.001
+* `PID_D` = 0.1
+* `PID_THROTTLE` = 1
+* `USE_CONSTANT_THROTTLE` = False
+* `PID_P_DELTA` = 0.05
+* `PID_D_DELTA` = 0.25
+
+*We used a fused Point One Navigation (GNSS/INS) module for improved GPS accuracy — refer to the Point One Nav integration documentation (`Point One Standard Dev Kit User Guide.pdf`) for setup details.*
+
+---
+
 ## 🔮 Next Steps
 
 * Integration into DonkeyCar (`donkeycar_integration/` directory)

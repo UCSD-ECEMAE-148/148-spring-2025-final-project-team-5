@@ -22,7 +22,7 @@ optimization:
   # - 'mincurv'        : Minimum curvature path (smoothest, best for constant speed!)
   # - 'mincurv_iqp'    : Iterative minimum curvature (more accurate but slower)
   # - 'mintime'        : Time-optimal trajectory (includes variable velocity)
-  method: mincurv_iqp              # For time‐optimal racing trajectories
+  method: mincurv              # For time‐optimal racing trajectories
   
   # Geometric method settings (only used when method='geometric')
   geometric:
@@ -91,7 +91,7 @@ track:
     flip_imp_track: false      # Reverse track direction
     set_new_start: false       # Override starting point
     new_start: [0.0, -47.0]    # New start coordinates [x, y]
-    min_track_width: 3.0       # [m] Minimum enforced track width
+    min_track_width: 1       # [m] Minimum enforced track width
     num_laps: 1                # Number of laps (for mintime)
 
     # ----- DonkeyCar throttle passthrough -----

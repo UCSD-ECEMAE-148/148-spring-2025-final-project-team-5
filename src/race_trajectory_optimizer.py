@@ -359,10 +359,6 @@ class RaceTrajectoryOptimizer:
         # **FIX: Validate shapes before calling create_raceline**
         refline = reftrack_interp[:, :2]  # Extract x,y coordinates
         
-        print(f"Debug shapes:")
-        print(f"  refline: {refline.shape}")
-        print(f"  normvec_normalized_interp: {normvec_normalized_interp.shape}")
-        print(f"  alpha_opt: {alpha_opt.shape}")
         
         # Ensure alpha and other arrays have matching lengths
         min_length = min(len(refline), len(normvec_normalized_interp), len(alpha_opt))
